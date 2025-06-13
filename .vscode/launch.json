@@ -1,0 +1,22 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "PowerShell Launch Script",
+            "type": "PowerShell",
+            "request": "launch",
+            "script": "${workspaceFolder}/deploy/powershell/Unified-Deploy.ps1",
+            "args": [
+                "-resourceGroup", "rg-pay-trans",
+                "-subscription", "14dc1cf2-bc71-4fb3-87d5-208a6731f6cc",
+                "-locations", "EastUS",
+                "-openAiLocation", "EastUS",
+                "-stepLoginAzure", "$False"
+            ], 
+            "cwd": "${workspaceFolder}/deploy/powershell",
+        }
+    ]
+}
