@@ -82,7 +82,7 @@ const AssignAccountForm = ({ setOpenModal, memberId }) => {
                             data.length && !account ? data.map((account, index) => {
                                 if (index > 10) return;
                                 if (index === 10) return (
-                                    <div className="p-2 m-2 border-t border-solid border-black">
+                                    <div key={account.id} className="p-2 m-2 border-t border-solid border-black">
                                         <p>{ data.length - 10} More</p>
                                     </div>
                                 );

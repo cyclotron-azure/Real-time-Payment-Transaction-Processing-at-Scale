@@ -72,7 +72,6 @@ if ($stepDeployOpenAi) {
     if (-not $openAiLocation) {
         $openAiLocation=$locArray[0]
     }
-
     & ./Deploy-OpenAi.ps1 -name $openAiName -resourceGroup $openAiRg -location $openAiLocation -completionsDeployment $openAiCompletionsDeployment
 }
 

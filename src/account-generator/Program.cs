@@ -142,7 +142,8 @@ namespace account_generator
                 return memberList;
             }
 
-            for (var i = 0; i <= 350; i++)
+            //TODO: make 10 configurable
+            for (var i = 1; i <= 10; i++)
             {
                 var memberId = Guid.NewGuid().ToString();
                 var memberFaker = new Faker<Member>()
@@ -228,7 +229,8 @@ namespace account_generator
                                 u.amount = Convert.ToDouble(f.Finance.Amount(minAmount, maxAmount, 2));
                             });
 
-                        var transactions = transactionFaker.GenerateBetween(4, 8);
+                        //TODO: make min/max configurable
+                        var transactions = transactionFaker.GenerateBetween(80, 150);
 
                         tasks.Add(
                             _pollyRetryPolicy.ExecuteAsync(async () =>
@@ -280,7 +282,10 @@ namespace account_generator
                             }, cancellationTokenSource.Token)
                         );
 
-                        if (tasks.Count == 100)
+                        // batchsize is # of accounts to create but they are randomly spread to members;
+                        // We only want a few accounts but a lot of transactions, CAN WE PICK MEMBERS IN ORDER AND ONLY ASSIGN X# OF ACCOUNTS INSTEAD OF RANDOM???????
+                        // transactions are copied to customer transactions via feed change handler
+                        if (totalTasks >= options.BatchSize) //tasks.Count == 100)
                         {
                             await Task.WhenAll(tasks);
                             totalTasks += tasks.Count;
