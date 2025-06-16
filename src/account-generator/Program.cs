@@ -10,6 +10,7 @@ using Bogus.Distributions.Gaussian;
 using Microsoft.Azure.Cosmos.Serialization.HybridRow.Schemas;
 using PartitionKey = Microsoft.Azure.Cosmos.PartitionKey;
 using System.Transactions;
+using System.Net;
 
 namespace account_generator
 {
@@ -87,6 +88,17 @@ namespace account_generator
             membersContainer = cosmosClient.GetContainer("payments", "members");
             globalIndexContainer = cosmosClient.GetContainer("payments", "globalIndex");
 
+
+
+            // Uncomment when want to clean up the transaction data first
+            //QueryDefinition query = new QueryDefinition("select * from c");
+            //await DeleteItemsInBatchesAsync<CorePayments.Infrastructure.Domain.Entities.Transaction>(transactionsContainer, query);
+            // need to update AccountSummary.accountId to { get; set; } first! Change back before populating all data
+            //await DeleteItemsInBatchesAsync<AccountSummary>(cosmosClient.GetContainer("payments", "customerTransactions"), query);
+            //await DeleteItemsInBatchesAsync<GlobalIndex>(cosmosClient.GetContainer("payments", "globalIndex"), query);
+            //return;
+
+
             // Generate Members if they don't already exist:
             var memberList = await CreateMembersAsync();
 
@@ -94,7 +106,8 @@ namespace account_generator
 
             try
             {
-                for (var i = 1; i <= 5; i++)
+                //TODO: make batchCount configurable
+                for (var i = 1; i <= 1; i++)
                 {
                     tasks.Add(LoadAsync(i, options, memberList));
                 }
@@ -285,7 +298,7 @@ namespace account_generator
                         // batchsize is # of accounts to create but they are randomly spread to members;
                         // We only want a few accounts but a lot of transactions, CAN WE PICK MEMBERS IN ORDER AND ONLY ASSIGN X# OF ACCOUNTS INSTEAD OF RANDOM???????
                         // transactions are copied to customer transactions via feed change handler
-                        if (totalTasks >= options.BatchSize) //tasks.Count == 100)
+                        if (tasks.Count >= options.BatchSize) //tasks.Count == 100)
                         {
                             await Task.WhenAll(tasks);
                             totalTasks += tasks.Count;
@@ -1564,6 +1577,95 @@ namespace account_generator
             });
 
             return transactions;
+        }
+
+
+
+        private static async Task<(IEnumerable<TEntity>?, string?)> PagedQuery<TEntity>(Container container,
+            QueryDefinition queryDefinition,
+            int pageSize,
+            PartitionKey? partitionKey = null,
+            string? continuationToken = null
+        ) where TEntity : new()
+        {
+            var resultIterator = container.GetItemQueryIterator<TEntity>(
+                queryDefinition,
+                continuationToken,
+                new QueryRequestOptions()
+                {
+                    PartitionKey = partitionKey,
+                    MaxItemCount = pageSize,
+                    ResponseContinuationTokenLimitInKb = 1
+                });
+
+
+            string? newContinuationToken = null;
+
+            if (resultIterator.HasMoreResults)
+            {
+                var response = await resultIterator.ReadNextAsync();
+
+                if (response.Count > 0)
+                    newContinuationToken = response.ContinuationToken;
+
+                return new(response.Resource, newContinuationToken);
+            }
+            else
+            {
+                return new(null, newContinuationToken);
+            }
+
+        }
+
+        private static async Task DeleteItemsInBatchesAsync<TEntity>(Container container, QueryDefinition queryDefinition, PartitionKey? partitionKey = null) where TEntity : new()
+        {
+            const int batchSize = 100;
+            bool hasMore = true;
+
+            while (hasMore)
+            {
+                var (items, con) = await PagedQuery<TEntity>(container, queryDefinition, batchSize, partitionKey);
+                if (items == null || items.Count() == 0)
+                {
+                    hasMore = false;
+                    break;
+                }
+
+                var tasks = new List<Task>();
+                foreach (var item in items)
+                {
+                    string id = item!.GetType().GetProperty("id").GetValue(item).ToString()!;
+                    //string partitionId = item!.GetType().GetProperty("accountId").GetValue(item).ToString()!;
+                    var partitionProp = item!.GetType().GetProperty("accountId") ?? item!.GetType().GetProperty("partitionKey");
+                    string partitionId = partitionProp!.GetValue(item).ToString()!;
+                    var pk = new PartitionKey(partitionId);
+                    tasks.Add(DeleteWithThrottlingAsync(container, id, pk));
+                }
+                await Task.WhenAll(tasks);
+            }
+        }
+
+        private static async Task DeleteWithThrottlingAsync(Container container, string id, PartitionKey partitionKey)
+        {
+            int maxRetries = 5;
+            int retryCount = 0;
+            while (true)
+            {
+                try
+                {
+                    await container.DeleteItemAsync<dynamic>(id, partitionKey);
+                    break; // Success, exit loop
+                }
+                catch (CosmosException ex) when (ex.StatusCode == HttpStatusCode.TooManyRequests)
+                {
+                    retryCount++;
+                    if (retryCount > maxRetries)
+                        throw; // Give up after max retries
+
+                    // Wait for the suggested retry interval
+                    await Task.Delay(ex.RetryAfter.Value.Minutes);
+                }
+            }
         }
 
     }
